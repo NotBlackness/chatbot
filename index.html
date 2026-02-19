@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal AI Chat</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gemini: {
+                            dark: '#131314',
+                            sidebar: '#1e1f20',
+                            input: '#1e1f20',
+                            border: '#444746',
+                            hover: '#333537',
+                            text: '#e3e3e3'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #444746; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Markdown Styles within AI responses */
+        .markdown-body pre { background-color: #0d0d0d; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .markdown-body code { font-family: monospace; background-color: #0d0d0d; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.9em; }
+        .markdown-body p { margin-bottom: 0.5rem; }
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+        .markdown-body ol { list-style-type: decimal; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+        .markdown-body a { color: #8ab4f8; text-decoration: underline; }
+    </style>
+</head>
+<body class="bg-gemini-dark text-gemini-text h-screen flex overflow-hidden font-sans selection:bg-blue-500 selection:text-white">
+
+    <aside id="sidebar" class="w-64 bg-gemini-sidebar border-r border-gemini-border flex flex-col transition-all duration-300 transform translate-x-0 absolute z-20 h-full md:relative md:translate-x-0">
+        <div class="p-4">
+            <button onclick="app.createNewChat()" class="w-full flex items-center gap-3 bg-gemini-dark hover:bg-gemini-hover border border-gemini-border rounded-full py-2 px-4 transition-colors">
+                <i class="fa-solid fa-plus text-sm"></i>
+                <span class="font-medium text-sm">New Chat</span>
+            </button>
+        </div>
+        <div class="px-4 pb-2 text-xs font-semibold text-gray-400 tracking-wider">Recent</div>
+        <div id="chatHistory" class="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
+            </div>
+        <div class="p-4 border-t border-gemini-border">
+            <button onclick="app.toggleSettings()" class="w-full flex items-center gap-3 hover:bg-gemini-hover rounded-lg py-2 px-3 transition-colors text-sm text-gray-300">
+                <i class="fa-solid fa-gear"></i>
+                <span>Settings</span>
+            </button>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-full relative w-full">
+        <header class="h-14 flex items-center justify-between px-4 sm:px-6">
+            <div class="flex items-center gap-3">
+                <button onclick="app.toggleSidebar()" class="md:hidden hover:bg-gemini-hover p-2 rounded-full transition-colors text-xl">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <h1 class="font-semibold text-lg flex items-center gap-2">
+                    <span id="currentModelDisplay">Universal AI</span>
+                    <i class="fa-solid fa-chevron-down text-xs text-gray-400 cursor-pointer" onclick="app.toggleSettings()"></i>
+                </h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <img src="https://ui-avatars.com/api/?name=User&background=333537&color=fff&rounded=true" alt="Profile" class="w-8 h-8 rounded-full">
+            </div>
+        </header>
+
+        <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 sm:p-6 pb-32 scroll-smooth">
+            <div class="max-w-3xl mx-auto space-y-6" id="messagesList">
+                <div id="welcomeScreen" class="flex flex-col items-center justify-center h-full text-center mt-20">
+                    <div class="w-16 h-16 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
+                        <i class="fa-solid fa-sparkles text-2xl text-white"></i>
+                    </div>
+                    <h2 class="text-3xl font-semibold mb-2">How can I help you today?</h2>
+                    <p class="text-gray-400 max-w-md">Ensure you have configured your OpenRouter API key in the settings to start chatting.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-0 w-full bg-gradient-to-t from-gemini-dark via-gemini-dark to-transparent pt-6 pb-6 px-4 sm:px-6">
+            <div class="max-w-3xl mx-auto relative">
+                <div class="bg-gemini-input rounded-3xl border border-gemini-border focus-within:border-gray-500 flex items-end p-2 transition-colors">
+                    <textarea 
+                        id="messageInput" 
+                        rows="1" 
+                        class="w-full bg-transparent border-none focus:ring-0 resize-none px-4 py-3 text-sm text-gray-100 placeholder-gray-400 max-h-48 overflow-y-auto"
+                        placeholder="Enter a prompt here..."
+                        oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"
+                    ></textarea>
+                    <button 
+                        id="sendBtn" 
+                        onclick="app.sendMessage()" 
+                        class="p-3 m-1 rounded-full text-gray-400 hover:text-white hover:bg-gemini-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="text-center mt-2 text-xs text-gray-500">
+                    AI can make mistakes. Consider verifying important information.
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="settingsModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-gemini-sidebar border border-gemini-border rounded-2xl w-full max-w-md shadow-2xl p-6 transform transition-all scale-100">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-semibold"><i class="fa-solid fa-gear mr-2"></i> Settings</h3>
+                <button onclick="app.toggleSettings()" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">OpenRouter API Key</label>
+                    <input type="password" id="apiKeyInput" class="w-full bg-gemini-dark border border-gemini-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="sk-or-v1-...">
+                    <p class="text-xs text-gray-500 mt-1">Stored locally in your browser.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Model Name</label>
+                    <input type="text" id="modelInput" class="w-full bg-gemini-dark border border-gemini-border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="google/gemini-2.5-pro">
+                    <p class="text-xs text-gray-500 mt-1">Check OpenRouter for available model tags.</p>
+                </div>
+            </div>
+            
+            <div class="mt-8 flex justify-end gap-3">
+                <button onclick="app.toggleSettings()" class="px-4 py-2 rounded-lg text-sm font-medium hover:bg-gemini-hover transition-colors">Cancel</button>
+                <button onclick="app.saveSettings()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors text-white">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const app = {
+            state: {
+                apiKey: localStorage.getItem('ai_apiKey') || '',
+                modelName: localStorage.getItem('ai_modelName') || 'google/gemini-pro',
+                chats: JSON.parse(localStorage.getItem('ai_chats')) || [],
+                currentChatId: null,
+                isGenerating: false
+            },
+
+            init() {
+                // DOM Elements
+                this.els = {
+                    sidebar: document.getElementById('sidebar'),
+                    chatHistory: document.getElementById('chatHistory'),
+                    messagesContainer: document.getElementById('messagesContainer'),
+                    messagesList: document.getElementById('messagesList'),
+                    messageInput: document.getElementById('messageInput'),
+                    sendBtn: document.getElementById('sendBtn'),
+                    welcomeScreen: document.getElementById('welcomeScreen'),
+                    settingsModal: document.getElementById('settingsModal'),
+                    apiKeyInput: document.getElementById('apiKeyInput'),
+                    modelInput: document.getElementById('modelInput'),
+                    currentModelDisplay: document.getElementById('currentModelDisplay')
+                };
+
+                // Setup Input Event Listeners
+                this.els.messageInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+
+                // Set initial UI state
+                this.els.currentModelDisplay.textContent = this.state.modelName.split('/').pop();
+                
+                // Initialize Chats
+                if (this.state.chats.length === 0) {
+                    this.createNewChat(false); // don't render yet
+                } else {
+                    this.state.currentChatId = this.state.chats[0].id;
+                }
+                
+                this.renderSidebar();
+                this.renderCurrentChat();
+            },
+
+            saveState() {
+                localStorage.setItem('ai_apiKey', this.state.apiKey);
+                localStorage.setItem('ai_modelName', this.state.modelName);
+                localStorage.setItem('ai_chats', JSON.stringify(this.state.chats));
+            },
+
+            toggleSidebar() {
+                this.els.sidebar.classList.toggle('-translate-x-full');
+            },
+
+            toggleSettings() {
+                const isHidden = this.els.settingsModal.classList.contains('hidden');
+                if (isHidden) {
+                    this.els.apiKeyInput.value = this.state.apiKey;
+                    this.els.modelInput.value = this.state.modelName;
+                    this.els.settingsModal.classList.remove('hidden');
+                } else {
+                    this.els.settingsModal.classList.add('hidden');
+                }
+            },
+
+            saveSettings() {
+                this.state.apiKey = this.els.apiKeyInput.value.trim();
+                const newModel = this.els.modelInput.value.trim() || 'google/gemini-pro';
+                this.state.modelName = newModel;
+                
+                this.els.currentModelDisplay.textContent = newModel.split('/').pop();
+                this.saveState();
+                this.toggleSettings();
+            },
+
+            createNewChat(render = true) {
+                const newChat = {
+                    id: Date.now().toString(),
+                    title: 'New conversation',
+                    messages: [],
+                    updatedAt: Date.now()
+                };
+                this.state.chats.unshift(newChat);
+                this.state.currentChatId = newChat.id;
+                this.saveState();
+                
+                if (render) {
+                    this.renderSidebar();
+                    this.renderCurrentChat();
+                    if(window.innerWidth < 768) this.toggleSidebar(); // hide sidebar on mobile
+                }
+            },
+
+            switchChat(id) {
+                this.state.currentChatId = id;
+                this.renderSidebar();
+                this.renderCurrentChat();
+                if(window.innerWidth < 768) this.toggleSidebar();
+            },
+
+            deleteChat(e, id) {
+                e.stopPropagation();
+                this.state.chats = this.state.chats.filter(c => c.id !== id);
+                if (this.state.chats.length === 0) {
+                    this.createNewChat(false);
+                } else if (this.state.currentChatId === id) {
+                    this.state.currentChatId = this.state.chats[0].id;
+                }
+                this.saveState();
+                this.renderSidebar();
+                this.renderCurrentChat();
+            },
+
+            renderSidebar() {
+                this.els.chatHistory.innerHTML = '';
+                this.state.chats.forEach(chat => {
+                    const isActive = chat.id === this.state.currentChatId;
+                    const div = document.createElement('div');
+                    div.className = `group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-gemini-hover text-white' : 'text-gray-300 hover:bg-gemini-hover hover:text-white'}`;
+                    div.onclick = () => this.switchChat(chat.id);
+                    
+                    div.innerHTML = `
+                        <div class="flex items-center gap-3 overflow-hidden">
+                            <i class="fa-regular fa-message text-sm opacity-70"></i>
+                            <span class="text-sm truncate w-36">${chat.title}</span>
+                        </div>
+                        <button onclick="app.deleteChat(event, '${chat.id}')" class="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    `;
+                    this.els.chatHistory.appendChild(div);
+                });
+            },
+
+            renderCurrentChat() {
+                const currentChat = this.state.chats.find(c => c.id === this.state.currentChatId);
+                this.els.messagesList.innerHTML = '';
+                
+                if (!currentChat || currentChat.messages.length === 0) {
+                    this.els.welcomeScreen.classList.remove('hidden');
+                    return;
+                }
+                
+                this.els.welcomeScreen.classList.add('hidden');
+                currentChat.messages.forEach(msg => this.appendMessageDOM(msg));
+                this.scrollToBottom();
+            },
+
+            appendMessageDOM(msg, isTyping = false) {
+                const div = document.createElement('div');
+                div.className = `flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`;
+                
+                if (msg.role === 'user') {
+                    div.innerHTML = `
+                        <div class="bg-gemini-hover px-5 py-3 rounded-3xl rounded-tr-sm max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap">${msg.content}</div>
+                    `;
+                } else {
+                    const contentHtml = isTyping ? `<i class="fa-solid fa-circle-notch fa-spin text-blue-500"></i> Thinking...` : marked.parse(msg.content);
+                    div.innerHTML = `
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center flex-shrink-0 mt-1">
+                            <i class="fa-solid fa-sparkles text-xs text-white"></i>
+                        </div>
+                        <div class="flex-1 max-w-[90%] text-sm leading-relaxed markdown-body text-gray-200 pt-1">
+                            ${contentHtml}
+                        </div>
+                    `;
+                    // Attach ID if it's the typing indicator so we can replace it later
+                    if(isTyping) div.id = 'typingIndicator';
+                }
+                this.els.messagesList.appendChild(div);
+            },
+
+            scrollToBottom() {
+                this.els.messagesContainer.scrollTop = this.els.messagesContainer.scrollHeight;
+            },
+
+            async sendMessage() {
+                if (this.state.isGenerating) return;
+                
+                const content = this.els.messageInput.value.trim();
+                if (!content) return;
+
+                if (!this.state.apiKey) {
+                    alert("Please set your OpenRouter API Key in the settings first.");
+                    this.toggleSettings();
+                    return;
+                }
+
+                // UI Updates
+                this.els.messageInput.value = '';
+                this.els.messageInput.style.height = 'auto'; // reset height
+                this.els.welcomeScreen.classList.add('hidden');
+                this.state.isGenerating = true;
+                this.els.sendBtn.disabled = true;
+
+                const currentChat = this.state.chats.find(c => c.id === this.state.currentChatId);
+                
+                // Add user message to state & DOM
+                const userMsg = { role: 'user', content };
+                currentChat.messages.push(userMsg);
+                
+                // Auto-generate title if it's the first message
+                if (currentChat.messages.length === 1) {
+                    currentChat.title = content.substring(0, 30) + (content.length > 30 ? '...' : '');
+                    this.renderSidebar();
+                }
+
+                this.appendMessageDOM(userMsg);
+                this.appendMessageDOM({ role: 'assistant', content: '' }, true); // Typing indicator
+                this.scrollToBottom();
+
+                // API Call
+                try {
+                    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${this.state.apiKey}`,
+                            'HTTP-Referer': window.location.href,
+                            'X-Title': 'Single File Universal Chat',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: this.state.modelName,
+                            messages: currentChat.messages
+                        })
+                    });
+
+                    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                    const data = await response.json();
+                    
+                    const aiContent = data.choices[0].message.content;
+                    const aiMsg = { role: 'assistant', content: aiContent };
+                    currentChat.messages.push(aiMsg);
+                    currentChat.updatedAt = Date.now();
+                    
+                    this.saveState();
+
+                    // Replace typing indicator with actual parsed message
+                    const typingNode = document.getElementById('typingIndicator');
+                    if (typingNode) {
+                        typingNode.outerHTML = ''; // Remove it
+                    }
+                    this.appendMessageDOM(aiMsg);
+                    
+                } catch (error) {
+                    console.error("Error:", error);
+                    const typingNode = document.getElementById('typingIndicator');
+                    if (typingNode) typingNode.outerHTML = '';
+                    
+                    this.appendMessageDOM({ 
+                        role: 'assistant', 
+                        content: `**Error:** Failed to get response. Please check your API key and model name.\n\n\`${error.message}\`` 
+                    });
+                } finally {
+                    this.state.isGenerating = false;
+                    this.els.sendBtn.disabled = false;
+                    this.scrollToBottom();
+                }
+            }
+        };
+
+        // Boot up the app when the DOM is ready
+        document.addEventListener('DOMContentLoaded', () => app.init());
+
+    </script>
+</body>
+</html>
